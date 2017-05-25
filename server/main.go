@@ -8,11 +8,15 @@ import (
 
 	"strings"
 
+	"encoding/json"
 )
 
-func handleConnection(conn net.Conn) {
 
-	data := make(map[string]map[string]bool)
+type db map[string]map[string]bool
+
+func handleConnection(conn net.Conn, data db) {
+
+
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -27,6 +31,7 @@ func handleConnection(conn net.Conn) {
 
 		switch w[0] {
 		case "SET":
+			fmt.Printf("will set -> %v with value: %v\n", w[1], w[2] )
 			if len(w) != 3 {
 				fmt.Fprint(conn, "==> SET must have a value\n")
 				continue
@@ -46,12 +51,15 @@ func handleConnection(conn net.Conn) {
 			}
 			i, ok := data[w[1]]
 			fmt.Printf("nr of map elements - > %v\n", len(i))
+
 			if ok == true {
 				var t []string
 				for k := range i {
 					t = append(t, k)
 				}
-				fmt.Fprintf(conn, "==>[%v] %v\n", len(t), t)
+
+				str, _ := json.Marshal(t)
+				fmt.Fprintf(conn, "%v\n", string(str))
 
 			} else {
 				fmt.Fprintf(conn, "--> %v\n", "No such key")
@@ -61,10 +69,14 @@ func handleConnection(conn net.Conn) {
 			for k := range data {
 				keys = append(keys, k)
 			}
-			fmt.Fprintf(conn, "==>[%v] %v\n", len(keys), keys)
+			str, _ := json.Marshal(keys)
+			fmt.Fprintf(conn, "%v\n", string(str))
+
 		case "DEL":
 			fmt.Fprintf(conn, "==> DELETED: %v\n", data[w[1]])
 			delete(data, w[1])
+		case "EXIT":
+			conn.Close()
 		default:
 			fmt.Fprintf(conn, "==> %v\n", "Command not found")
 		}
@@ -76,12 +88,12 @@ func handleConnection(conn net.Conn) {
 
 func main() {
 
-
-
 	ln, err := net.Listen("tcp", ":3500")
 	if err != nil {
 		// handle error
 	}
+	data := make(db)
+
 
 	for {
 		conn, err := ln.Accept()
@@ -89,7 +101,7 @@ func main() {
 			// handle error
 			log.Panic(err)
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, data)
 	}
 
 }

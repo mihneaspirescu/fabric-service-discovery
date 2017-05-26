@@ -15,7 +15,7 @@ import (
 	"github.com/mihneaspirescu/fabric-discovery/server/admin"
 )
 
-var servers []string
+
 var serversAdmin []string
 
 type Update struct {
@@ -27,14 +27,14 @@ func set(topic string, address string) string {
 	return "SETADMIN " + topic + " " + address
 }
 
-func writeToSibligs(c chan Update) {
+func writeToSibligs(servers []admin.Node,c chan Update) {
 
 	for val := range c {
 		fmt.Printf("==> Received a message to send to siblings %v\n", val)
 		for _, s := range servers {
-			fmt.Printf("=> Sending to %v\n", s)
+			fmt.Printf("=> Sending to %v\n", s.ClientAddress)
 
-			conn, err := net.Dial("tcp", s)
+			conn, err := net.Dial("tcp", s.ClientAddress)
 
 			if err != nil {
 				fmt.Printf("--> Error writing replication to server %v", s)
@@ -49,11 +49,13 @@ func writeToSibligs(c chan Update) {
 
 }
 
-func handleMessage(conn net.Conn, currentState *admin.State, w []string, toSiblings chan Update) {
+func handleMessage(conn net.Conn, currentState *admin.State, w []string) {
 
 	data := currentState.Database
+	toSiblings := make(chan Update)
+	go writeToSibligs(currentState.Nodes,toSiblings)
 
-	fmt.Printf("######### The current state is - %v \n", currentState)
+
 
 	switch w[0] {
 	case "SETADMIN":
@@ -124,7 +126,13 @@ func handleMessage(conn net.Conn, currentState *admin.State, w []string, toSibli
 	case "DEL":
 		fmt.Fprintf(conn, "==> DELETED: %v\n", data[w[1]])
 		delete(data, w[1])
+		toSiblings <- Update{
+			topic: w[1],
+			value: w[2],
+		}
 		currentState.Tick++
+	case "NODES":
+		fmt.Fprintf(conn, "==> NODES: %v\n", currentState.Nodes)
 	case "INIT":
 		fmt.Println("received a init call")
 		encoder := gob.NewEncoder(conn)
@@ -140,8 +148,7 @@ func handleConnection(conn net.Conn, currentState *admin.State) {
 
 	scanner := bufio.NewScanner(conn)
 
-	toSiblings := make(chan Update)
-	go writeToSibligs(toSiblings)
+
 
 	for scanner.Scan() {
 
@@ -153,33 +160,46 @@ func handleConnection(conn net.Conn, currentState *admin.State) {
 			continue
 		}
 
-		go handleMessage(conn, currentState, w, toSiblings)
+		go handleMessage(conn, currentState, w)
 
 	}
 
 	defer conn.Close()
 }
 
+
+
+
 func main() {
+
 
 	// args[0] => portServer
 	// args[1] => adminPort
-	// args[2] => all other instances addresses
-	// args[3] => all other instances admin addresses
+	// args[2] ...  => pairs of :portServer,:adminServer
 	args := os.Args[1:]
 
+	portClient := args[0]
+	portAdministration := args[1]
+
+
+	nodes := []admin.Node{}
+
 	if len(args) > 2 {
-		servers = strings.Split(args[2], ",")
-		serversAdmin = strings.Split(args[3], ",")
+		nodes = admin.GenerateListOfNodes(args[2:])
 
 	}
 
-	// generate an initial state for the server
-	currentState := admin.NewState()
 
-	if len(serversAdmin) != 0 {
-		fmt.Printf("==> Searching for configurations %v\n", serversAdmin)
-		go admin.GetConfigFromAvailableServers(serversAdmin, currentState)
+	// generate an initial state for the server
+	// generates the self node
+	currentState := admin.NewState(":"+portAdministration, ":"+portClient)
+
+	fmt.Printf("*** the current node is %v with management %v and client %v \n", currentState.Self, currentState.Self.ManagementAddress, currentState.Self.ClientAddress)
+
+	if len(nodes) != 0 {
+		fmt.Printf("==> Searching for configurations %v\n", nodes)
+		currentState.Nodes = nodes
+		go admin.GetConfigFromAvailableServers(currentState)
 	}
 
 	// runs the admin server which runs on port args[1]

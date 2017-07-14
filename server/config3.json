@@ -1,0 +1,14 @@
+{
+  "self": {
+    "client_addr": "127.0.0.1:5103",
+    "management_addr": "127.0.0.1:5003",
+    "name":"node3"
+  },
+  "nodes": [
+    {
+      "client_addr": "127.0.0.1:5101",
+      "management_addr": "127.0.0.1:5001",
+      "name":"node2"
+    }
+  ]
+}

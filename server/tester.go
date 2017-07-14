@@ -3,7 +3,6 @@ package main
 import (
 	"net"
 	"log"
-
 	"encoding/gob"
 )
 
@@ -17,7 +16,7 @@ type state struct {
 
 func main(){
 
-	conn, err := net.Dial("tcp", ":3550")
+	conn, err := net.Dial("tcp", ":3000")
 
 	if err != nil {
 		log.Fatal(err)
@@ -33,9 +32,5 @@ func main(){
 
 	encoder := gob.NewEncoder(conn)
 	encoder.Encode(currentState)
-
-
-
-
 
 }

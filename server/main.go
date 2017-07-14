@@ -13,6 +13,8 @@ import (
 	"log"
 	"encoding/gob"
 	"github.com/mihneaspirescu/fabric-discovery/server/admin"
+	"flag"
+	"io/ioutil"
 )
 
 
@@ -32,9 +34,9 @@ func writeToSibligs(servers []admin.Node,c chan Update) {
 	for val := range c {
 		fmt.Printf("==> Received a message to send to siblings %v\n", val)
 		for _, s := range servers {
-			fmt.Printf("=> Sending to %v\n", s.ClientAddress)
+			fmt.Printf("=> Sending to %v\n", s.ClientAddress.String())
 
-			conn, err := net.Dial("tcp", s.ClientAddress)
+			conn, err := net.Dial("tcp", s.ClientAddress.String())
 
 			if err != nil {
 				fmt.Printf("--> Error writing replication to server %v", s)
@@ -169,45 +171,45 @@ func handleConnection(conn net.Conn, currentState *admin.State) {
 
 
 
-
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
 func main() {
 
+	textPtr := flag.String("config", "config.json", "Configuration file for server")
+	flag.Parse()
 
-	// args[0] => portServer
-	// args[1] => adminPort
-	// args[2] ...  => pairs of :portServer,:adminServer
-	args := os.Args[1:]
-
-	portClient := args[0]
-	portAdministration := args[1]
-
-
-	nodes := []admin.Node{}
-
-	if len(args) > 2 {
-		nodes = admin.GenerateListOfNodes(args[2:])
-
+	if *textPtr == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
+	dat, err := ioutil.ReadFile(*textPtr)
+	check(err)
 
-	// generate an initial state for the server
-	// generates the self node
-	currentState := admin.NewState(":"+portAdministration, ":"+portClient)
+	//get state from json file.
+	currentState := admin.NewState(dat)
 
-	fmt.Printf("*** the current node is %v with management %v and client %v \n", currentState.Self, currentState.Self.ManagementAddress, currentState.Self.ClientAddress)
+	fmt.Printf("the current state is - %v \n", currentState)
 
-	if len(nodes) != 0 {
-		fmt.Printf("==> Searching for configurations %v\n", nodes)
-		currentState.Nodes = nodes
+
+
+
+	fmt.Printf("*** the current node is %v with management %v and client %v \n", currentState.Self, currentState.Self.ManagementAddress.String(), currentState.Self.ClientAddress.String())
+
+	if len(currentState.Nodes) != 0 {
+		fmt.Printf("==> Searching for configurations %v\n", currentState.Nodes)
 		go admin.GetConfigFromAvailableServers(currentState)
 	}
 
 	// runs the admin server which runs on port args[1]
 	// and parses the GOB for configuration
-	go admin.RunAdminServer(args[1], currentState)
+	go admin.RunAdminServer(currentState.Self.ManagementAddress.String(), currentState)
 
 	//normal server that parses the input.
-	ln, err := net.Listen("tcp", ":"+args[0])
+	ln, err := net.Listen("tcp", currentState.Self.ClientAddress.String())
 	if err != nil {
 		log.Fatal(err)
 	}
